@@ -1,5 +1,0 @@
-package alloc
-
-// Allocation APIs shared by the standard allocator modules.
-func malloc(size int) *byte
-func free(ptr *byte)

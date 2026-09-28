@@ -1,9 +1,0 @@
-
-package main
-
-import "std/fmt"
-
-func main() int {
-    fmt.Println("Hello via fmt.Println")
-    return 0
-}
