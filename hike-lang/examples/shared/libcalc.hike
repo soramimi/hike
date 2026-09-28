@@ -1,0 +1,59 @@
+package main
+
+// 外部C標準ライブラリ関数の宣言 (C関数呼び出しの検証)
+extern func abs(n int) int
+
+// 1. Hike内部用のジェネリックロジック
+func Add[T](a T, b T) T {
+	return a + b
+}
+
+func Multiply[T](a T, b T) T {
+	return a * b
+}
+
+// 2. C ABIエクスポート関数 (cfunc宣言)
+cfunc HikeAddInt(a int, b int) int {
+	return Add[int](a, b)
+}
+
+cfunc HikeAddFloat(a float64, b float64) float64 {
+	return Add[float64](a, b)
+}
+
+cfunc HikeMultiplyInt(a int, b int) int {
+	return Multiply[int](a, b)
+}
+
+// 構造体のメモリレイアウト検証 (C ABI互換)
+type Vector2D struct {
+	X float64
+	Y float64
+}
+
+cfunc HikeDotProduct(v1 *Vector2D, v2 *Vector2D) float64 {
+	return (v1.X * v2.X) + (v1.Y * v2.Y)
+}
+
+// 3. Hike内部から別のcfuncを呼び出す検証 (let を := に修正)
+cfunc HikeAddAndDouble(a int, b int) int {
+	sum := HikeAddInt(a, b)
+	return sum * 2
+}
+
+// 4. Hike内部から外部C関数 (abs) を呼び出す検証 (let を := に修正)
+cfunc HikeAbsDiff(a int, b int) int {
+	diff := a - b
+	return abs(diff)
+}
+
+// 2nd test for cfunc with array parameter
+// fix(emitter): handle array-type casts in emitCast (Fixes #2)#3
+cfunc CTestArr(val int) int {
+    var h [5]int
+    h[0] = val
+    h[1] = val + 1
+    var sum int = 0
+    sum = h[0] + h[1]
+    return sum
+}

@@ -1,0 +1,29 @@
+package main
+
+// Thin C-ABI shims defined in hike_shim.c (avoids relying on `bool` ABI
+// matching between Hike and pico-sdk; everything here is plain uint32).
+// NOTE: names must avoid Hike's reserved runtime hook names (e.g.
+// hike_sleep_ms, hike_now_ns, hike_thread_spawn, hike_event_*) -- those
+// collide with symbols already defined in the compiler's built-in runtime IR.
+func pico_gpio_init(pin uint32)
+func pico_gpio_set_dir_out(pin uint32)
+func pico_gpio_put(pin uint32, value uint32)
+func pico_delay_ms(ms uint32)
+
+const LedPin uint32 = 25
+const DelayMs uint32 = 250
+
+// Called once at startup (from main.c). Arduino-style, though the repeated
+// call to loop() happens in main.c, not inside Hike.
+func setup() {
+    pico_gpio_init(LedPin)
+    pico_gpio_set_dir_out(LedPin)
+}
+
+// Called repeatedly by main.c's `while (true) { loop(); }`.
+func loop() {
+    pico_gpio_put(LedPin, 1)
+    pico_delay_ms(DelayMs)
+    pico_gpio_put(LedPin, 0)
+    pico_delay_ms(DelayMs)
+}

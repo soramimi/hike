@@ -1,0 +1,844 @@
+package hir
+
+import (
+	"fmt"
+	"strings"
+
+	"hikec-go/pkg/sema"
+)
+
+type Value interface {
+	Type() sema.Type
+	String() string
+}
+
+type Reg struct {
+	ID   int
+	Typ  sema.Type
+	Name string
+}
+
+func (r *Reg) Type() sema.Type { return r.Typ }
+func (r *Reg) String() string {
+	if r.Name != "" {
+		return fmt.Sprintf("%%%s", r.Name)
+	}
+	return fmt.Sprintf("%%v%d", r.ID)
+}
+
+type ConstZero struct {
+	Typ sema.Type
+}
+
+func (c *ConstZero) Type() sema.Type { return c.Typ }
+func (c *ConstZero) String() string  { return "zeroinitializer" }
+
+type ConstInt struct {
+	Val int64
+	Typ sema.Type
+}
+
+func (c *ConstInt) Type() sema.Type { return c.Typ }
+func (c *ConstInt) String() string  { return fmt.Sprintf("%d", c.Val) }
+
+type ConstFloat struct {
+	Val float64
+	Typ sema.Type
+}
+
+func (c *ConstFloat) Type() sema.Type { return c.Typ }
+func (c *ConstFloat) String() string {
+	s := fmt.Sprintf("%g", c.Val)
+	if !strings.Contains(s, ".") && !strings.Contains(s, "e") {
+		s += ".0"
+	}
+	return s
+}
+
+type ConstBool struct {
+	Val bool
+	Typ sema.Type
+}
+
+func (c *ConstBool) Type() sema.Type { return c.Typ }
+func (c *ConstBool) String() string  { return fmt.Sprintf("%t", c.Val) }
+
+type ConstString struct {
+	Label  string
+	Raw    string
+	Length int
+	Typ    sema.Type
+}
+
+func (c *ConstString) Type() sema.Type { return c.Typ }
+func (c *ConstString) String() string  { return fmt.Sprintf("@%s", c.Label) }
+
+type ConstNil struct {
+	Typ sema.Type
+}
+
+func (c *ConstNil) Type() sema.Type { return c.Typ }
+func (c *ConstNil) String() string  { return "nil" }
+
+type GlobalVar struct {
+	Name        string
+	Typ         sema.Type
+	MemoryClass GlobalMemoryClass
+	MemorySize  int64
+}
+
+type GlobalMemoryClass int
+
+const (
+	GlobalMemoryNormal GlobalMemoryClass = iota
+	GlobalMemoryThreadable
+	GlobalMemoryConcurrent
+)
+
+func (g *GlobalVar) Type() sema.Type { return g.Typ }
+func (g *GlobalVar) String() string  { return fmt.Sprintf("@%s", g.Name) }
+
+type Opcode int
+
+const (
+	OpAdd Opcode = iota
+	OpSub
+	OpMul
+	OpDiv
+	OpRem
+	OpAnd
+	OpOr
+	OpXor
+	OpShl
+	OpShr
+	OpEq
+	OpNeq
+	OpLt
+	OpLe
+	OpGt
+	OpGe
+	OpNeg
+	OpNot
+)
+
+func (op Opcode) String() string {
+	switch op {
+	case OpAdd:
+		return "add"
+	case OpSub:
+		return "sub"
+	case OpMul:
+		return "mul"
+	case OpDiv:
+		return "div"
+	case OpRem:
+		return "rem"
+	case OpAnd:
+		return "and"
+	case OpOr:
+		return "or"
+	case OpXor:
+		return "xor"
+	case OpShl:
+		return "shl"
+	case OpShr:
+		return "shr"
+	case OpEq:
+		return "eq"
+	case OpNeq:
+		return "neq"
+	case OpLt:
+		return "lt"
+	case OpLe:
+		return "le"
+	case OpGt:
+		return "gt"
+	case OpGe:
+		return "ge"
+	case OpNeg:
+		return "neg"
+	case OpNot:
+		return "not"
+	default:
+		return "unknown_op"
+	}
+}
+
+type Instruction interface {
+	String() string
+	Result() *Reg
+}
+
+// InstructionKey returns a scalar key for debug metadata.  Keeping interface
+// values out of map keys is important for the self-hosted wasm32 compiler:
+// interface hashing is not part of the HIR data model and is needlessly
+// fragile across the native and Go-Hike runtimes.
+func InstructionKey(instr Instruction) string {
+	if instr == nil {
+		return ""
+	}
+	// The textual form is not unique: every function can contain v3, v4,
+	// identical loads, and identical stores. Use the instruction identity as
+	// part of the string key while keeping the metadata map wasm-friendly
+	// (string keys rather than interface keys).
+	return fmt.Sprintf("%T@%p", instr, instr)
+}
+
+// SourceLocation identifies the Hike source location associated with a HIR
+// instruction.
+type SourceLocation struct {
+	Filename string
+	Line     int
+	Column   int
+}
+
+type InstrAlloca struct {
+	Dst       *Reg
+	AllocType sema.Type
+}
+
+func (i *InstrAlloca) Result() *Reg { return i.Dst }
+func (i *InstrAlloca) String() string {
+	return fmt.Sprintf("  %s = alloca %s", i.Dst, i.AllocType.TypeName())
+}
+
+type InstrAllocaDynamic struct {
+	Dst       *Reg
+	Size      Value
+	AllocType sema.Type
+}
+
+func (i *InstrAllocaDynamic) Result() *Reg { return i.Dst }
+func (i *InstrAllocaDynamic) String() string {
+	return fmt.Sprintf("  %s = alloca_dyn %s, %s", i.Dst, i.AllocType.TypeName(), i.Size)
+}
+
+type InstrHeapAlloc struct {
+	Dst       *Reg
+	Size      Value
+	AllocType sema.Type
+	// KeepOnHeap is true for values that escape the current function.
+	KeepOnHeap bool
+	// KeepOnHeapInArea prevents area lowering for backing storage belonging
+	// to a string or slice.  The allocation mode is otherwise unchanged.
+	KeepOnHeapInArea bool
+}
+
+// InstrRegionBegin/Alloc/End are emitted only when region allocation is enabled.
+// The handle is function-local, while the arena itself is reclaimed in O(1).
+type InstrRegionBegin struct{ Dst *Reg }
+
+func (i *InstrRegionBegin) Result() *Reg   { return i.Dst }
+func (i *InstrRegionBegin) String() string { return fmt.Sprintf("  %s = region_begin", i.Dst) }
+
+type InstrRegionAlloc struct {
+	Dst       *Reg
+	Region    Value
+	Size      Value
+	AllocType sema.Type
+}
+
+func (i *InstrRegionAlloc) Result() *Reg { return i.Dst }
+func (i *InstrRegionAlloc) String() string {
+	return fmt.Sprintf("  %s = region_alloc %s, %s", i.Dst, i.AllocType.TypeName(), i.Size)
+}
+
+type InstrRegionEnd struct{ Region Value }
+
+func (i *InstrRegionEnd) Result() *Reg   { return nil }
+func (i *InstrRegionEnd) String() string { return fmt.Sprintf("  region_end %s", i.Region) }
+
+// Area instructions delimit a lexical area-memory scope. Unlike the optional
+// function-wide region pass, these instructions are emitted at source scope
+// boundaries and may be nested.
+type InstrAreaBegin struct {
+	Dst    *Reg
+	Size   Value
+	Parent Value
+}
+
+func (i *InstrAreaBegin) Result() *Reg { return i.Dst }
+func (i *InstrAreaBegin) String() string {
+	if i.Size == nil {
+		return fmt.Sprintf("  %s = area_begin", i.Dst)
+	}
+	return fmt.Sprintf("  %s = area_begin %s", i.Dst, i.Size)
+}
+
+type InstrAreaAlloc struct {
+	Dst       *Reg
+	Area      Value
+	Size      Value
+	AllocType sema.Type
+}
+
+func (i *InstrAreaAlloc) Result() *Reg { return i.Dst }
+func (i *InstrAreaAlloc) String() string {
+	return fmt.Sprintf("  %s = area_alloc %s, %s", i.Dst, i.AllocType.TypeName(), i.Size)
+}
+
+type InstrAreaEnd struct{ Area Value }
+
+func (i *InstrAreaEnd) Result() *Reg   { return nil }
+func (i *InstrAreaEnd) String() string { return fmt.Sprintf("  area_end %s", i.Area) }
+
+func (i *InstrHeapAlloc) Result() *Reg { return i.Dst }
+func (i *InstrHeapAlloc) String() string {
+	return fmt.Sprintf("  %s = heapalloc %s, %s", i.Dst, i.AllocType.TypeName(), i.Size)
+}
+
+type InstrLoad struct {
+	Dst *Reg
+	Ptr Value
+}
+
+func (i *InstrLoad) Result() *Reg { return i.Dst }
+func (i *InstrLoad) String() string {
+	return fmt.Sprintf("  %s = load %s, %s", i.Dst, i.Dst.Typ.TypeName(), i.Ptr)
+}
+
+type InstrStore struct {
+	Val Value
+	Ptr Value
+}
+
+func (i *InstrStore) Result() *Reg { return nil }
+func (i *InstrStore) String() string {
+	return fmt.Sprintf("  store %s %s, %s", i.Val.Type().TypeName(), i.Val, i.Ptr)
+}
+
+type InstrLock struct{}
+
+func (i *InstrLock) Result() *Reg   { return nil }
+func (i *InstrLock) String() string { return "  lock" }
+
+type InstrUnlock struct{}
+
+func (i *InstrUnlock) Result() *Reg   { return nil }
+func (i *InstrUnlock) String() string { return "  unlock" }
+
+type InstrBinary struct {
+	Dst          *Reg
+	Op           Opcode
+	L            Value
+	R            Value
+	LogicalShift bool
+}
+
+func (i *InstrBinary) Result() *Reg { return i.Dst }
+func (i *InstrBinary) String() string {
+	return fmt.Sprintf("  %s = %s %s, %s", i.Dst, i.Op, i.L, i.R)
+}
+
+type InstrUnary struct {
+	Dst *Reg
+	Op  Opcode
+	Val Value
+}
+
+type InstrInlineAsm struct {
+	Template           string
+	OutputConstraints  string
+	InputConstraints   string
+	ClobberConstraints string
+	Args               []Value
+}
+
+func (i *InstrInlineAsm) Result() *Reg   { return nil }
+func (i *InstrInlineAsm) String() string { return fmt.Sprintf("inlineasm %q", i.Template) }
+
+func (i *InstrUnary) Result() *Reg { return i.Dst }
+func (i *InstrUnary) String() string {
+	return fmt.Sprintf("  %s = %s %s", i.Dst, i.Op, i.Val)
+}
+
+type InstrCast struct {
+	Dst    *Reg
+	Val    Value
+	ToType sema.Type
+}
+
+func (i *InstrCast) Result() *Reg { return i.Dst }
+func (i *InstrCast) String() string {
+	return fmt.Sprintf("  %s = cast %s %s to %s", i.Dst, i.Val.Type().TypeName(), i.Val, i.ToType.TypeName())
+}
+
+type InstrBoxInterface struct {
+	Dst      *Reg
+	Val      Value
+	Iface    *sema.InterfaceType
+	ItabName string
+	TypeID   int64
+}
+
+func (i *InstrBoxInterface) Result() *Reg { return i.Dst }
+func (i *InstrBoxInterface) String() string {
+	return fmt.Sprintf("  %s = box_iface %s %s to %s (itab: %s)",
+		i.Dst, i.Val.Type().TypeName(), i.Val, i.Iface.TypeName(), i.ItabName)
+}
+
+type InstrUnboxInterface struct {
+	Dst        *Reg
+	IfaceVal   Value
+	TargetType sema.Type
+}
+
+func (i *InstrUnboxInterface) Result() *Reg { return i.Dst }
+func (i *InstrUnboxInterface) String() string {
+	return fmt.Sprintf("  %s = unbox_iface %s to %s", i.Dst, i.IfaceVal, i.TargetType.TypeName())
+}
+
+type InstrGetFieldPtr struct {
+	Dst        *Reg
+	BasePtr    Value
+	FieldIndex int
+	FieldName  string
+}
+
+func (i *InstrGetFieldPtr) Result() *Reg { return i.Dst }
+func (i *InstrGetFieldPtr) String() string {
+	return fmt.Sprintf("  %s = getfieldptr %s, %d ; .%s", i.Dst, i.BasePtr, i.FieldIndex, i.FieldName)
+}
+
+type InstrGetElemPtr struct {
+	Dst     *Reg
+	BasePtr Value
+	Index   Value
+}
+
+func (i *InstrGetElemPtr) Result() *Reg { return i.Dst }
+func (i *InstrGetElemPtr) String() string {
+	return fmt.Sprintf("  %s = getelemptr %s, %s", i.Dst, i.BasePtr, i.Index)
+}
+
+type InstrCallStatic struct {
+	Dst        *Reg
+	CalleeName string
+	Args       []Value
+}
+
+func (i *InstrCallStatic) Result() *Reg { return i.Dst }
+func (i *InstrCallStatic) String() string {
+	args := make([]string, len(i.Args))
+	for idx, a := range i.Args {
+		args[idx] = fmt.Sprintf("%s %s", a.Type().TypeName(), a)
+	}
+	if i.Dst != nil {
+		return fmt.Sprintf("  %s = call @%s(%s)", i.Dst, i.CalleeName, strings.Join(args, ", "))
+	}
+	return fmt.Sprintf("  call @%s(%s)", i.CalleeName, strings.Join(args, ", "))
+}
+
+type InstrCallIndirect struct {
+	Dst    *Reg
+	FnPtr  Value
+	EnvPtr Value
+	Args   []Value
+}
+
+func (i *InstrCallIndirect) Result() *Reg { return i.Dst }
+func (i *InstrCallIndirect) String() string {
+	args := make([]string, len(i.Args))
+	for idx, a := range i.Args {
+		args[idx] = fmt.Sprintf("%s %s", a.Type().TypeName(), a)
+	}
+	envStr := "nil"
+	if i.EnvPtr != nil {
+		envStr = i.EnvPtr.String()
+	}
+	if i.Dst != nil {
+		return fmt.Sprintf("  %s = call_indirect %s, env: %s, (%s)", i.Dst, i.FnPtr, envStr, strings.Join(args, ", "))
+	}
+	return fmt.Sprintf("  call_indirect %s, env: %s, (%s)", i.FnPtr, envStr, strings.Join(args, ", "))
+}
+
+type InstrCallIface struct {
+	Dst         *Reg
+	IfaceVal    Value
+	MethodIndex int
+	MethodName  string
+	Args        []Value
+}
+
+func (i *InstrCallIface) Result() *Reg { return i.Dst }
+func (i *InstrCallIface) String() string {
+	args := make([]string, len(i.Args))
+	for idx, a := range i.Args {
+		args[idx] = fmt.Sprintf("%s %s", a.Type().TypeName(), a)
+	}
+	if i.Dst != nil {
+		return fmt.Sprintf("  %s = call_iface %s.#%d (%s), (%s)", i.Dst, i.IfaceVal, i.MethodIndex, i.MethodName, strings.Join(args, ", "))
+	}
+	return fmt.Sprintf("  call_iface %s.#%d (%s), (%s)", i.IfaceVal, i.MethodIndex, i.MethodName, strings.Join(args, ", "))
+}
+
+// -----------------------------------------------------------------------------
+// スレッドプール非同期処理用命令
+// -----------------------------------------------------------------------------
+
+type InstrAsync struct {
+	Dst      *Reg
+	FnPtr    Value
+	EnvPtr   Value
+	RetTypes []sema.Type
+}
+
+func (i *InstrAsync) Result() *Reg { return i.Dst }
+func (i *InstrAsync) String() string {
+	envStr := "nil"
+	if i.EnvPtr != nil {
+		envStr = i.EnvPtr.String()
+	}
+	return fmt.Sprintf("  %s = async %s, env: %s", i.Dst, i.FnPtr, envStr)
+}
+
+type InstrTaskWait struct {
+	Dst  *Reg
+	Task Value
+}
+
+func (i *InstrTaskWait) Result() *Reg { return i.Dst }
+func (i *InstrTaskWait) String() string {
+	return fmt.Sprintf("  %s = task_wait %s", i.Dst, i.Task)
+}
+
+// -----------------------------------------------------------------------------
+// チャネル・並行キュー処理用命令
+// -----------------------------------------------------------------------------
+
+type InstrChanMake struct {
+	Dst      *Reg
+	ElemType sema.Type
+	Cap      Value
+}
+
+func (i *InstrChanMake) Result() *Reg { return i.Dst }
+func (i *InstrChanMake) String() string {
+	capStr := "0"
+	if i.Cap != nil {
+		capStr = i.Cap.String()
+	}
+	return fmt.Sprintf("  %s = chan_make %s, cap: %s", i.Dst, i.ElemType.TypeName(), capStr)
+}
+
+type InstrChanSend struct {
+	Chan Value
+	Val  Value
+}
+
+func (i *InstrChanSend) Result() *Reg { return nil }
+func (i *InstrChanSend) String() string {
+	return fmt.Sprintf("  chan_send %s, %s %s", i.Chan, i.Val.Type().TypeName(), i.Val)
+}
+
+type InstrChanRecv struct {
+	Dst   *Reg
+	OkDst *Reg
+	Chan  Value
+}
+
+func (i *InstrChanRecv) Result() *Reg { return i.Dst }
+func (i *InstrChanRecv) String() string {
+	if i.OkDst != nil {
+		return fmt.Sprintf("  %s, %s = chan_recv %s", i.Dst, i.OkDst, i.Chan)
+	}
+	return fmt.Sprintf("  %s = chan_recv %s", i.Dst, i.Chan)
+}
+
+type InstrChanClose struct {
+	Chan Value
+}
+
+func (i *InstrChanClose) Result() *Reg { return nil }
+func (i *InstrChanClose) String() string {
+	return fmt.Sprintf("  chan_close %s", i.Chan)
+}
+
+type InstrExtractValue struct {
+	Dst   *Reg
+	Agg   Value
+	Index int
+}
+
+func (i *InstrExtractValue) Result() *Reg { return i.Dst }
+func (i *InstrExtractValue) String() string {
+	return fmt.Sprintf("  %s = extractvalue %s, %d", i.Dst, i.Agg, i.Index)
+}
+
+type InstrInsertValue struct {
+	Dst   *Reg
+	Agg   Value
+	Val   Value
+	Index int
+}
+
+func (i *InstrInsertValue) Result() *Reg { return i.Dst }
+func (i *InstrInsertValue) String() string {
+	return fmt.Sprintf("  %s = insertvalue %s, %s, %d", i.Dst, i.Agg, i.Val, i.Index)
+}
+
+type Terminator interface {
+	Instruction
+	Successors() []string
+}
+
+type InstrJump struct {
+	Target string
+}
+
+func (i *InstrJump) Result() *Reg         { return nil }
+func (i *InstrJump) Successors() []string { return []string{i.Target} }
+func (i *InstrJump) String() string       { return fmt.Sprintf("  jump label %%%s", i.Target) }
+
+type InstrBranch struct {
+	Cond       Value
+	ThenTarget string
+	ElseTarget string
+}
+
+// InstrBrTable is the CFG form of a structured br_table.  Structured HIR
+// lowers its depth targets to block labels before reaching a backend, so the
+// existing LLVM and dispatcher-based Wasm emitters can consume it directly.
+type InstrBrTable struct {
+	Index         Value
+	Targets       []string
+	DefaultTarget string
+}
+
+func (i *InstrBrTable) Result() *Reg { return nil }
+func (i *InstrBrTable) Successors() []string {
+	result := append([]string{}, i.Targets...)
+	if i.DefaultTarget != "" {
+		result = append(result, i.DefaultTarget)
+	}
+	return result
+}
+func (i *InstrBrTable) String() string {
+	return fmt.Sprintf("  br_table %s, [%s], label %%%s", i.Index,
+		strings.Join(i.Targets, ", "), i.DefaultTarget)
+}
+
+func (i *InstrBranch) Result() *Reg         { return nil }
+func (i *InstrBranch) Successors() []string { return []string{i.ThenTarget, i.ElseTarget} }
+func (i *InstrBranch) String() string {
+	return fmt.Sprintf("  branch %s, label %%%s, label %%%s", i.Cond, i.ThenTarget, i.ElseTarget)
+}
+
+type InstrReturn struct {
+	Vals []Value
+}
+
+func (i *InstrReturn) Result() *Reg         { return nil }
+func (i *InstrReturn) Successors() []string { return nil }
+func (i *InstrReturn) String() string {
+	if len(i.Vals) == 0 {
+		return "  ret void"
+	}
+	vStrs := make([]string, len(i.Vals))
+	for idx, v := range i.Vals {
+		vStrs[idx] = fmt.Sprintf("%s %s", v.Type().TypeName(), v)
+	}
+	return fmt.Sprintf("  ret %s", strings.Join(vStrs, ", "))
+}
+
+type InstrUnreachable struct{}
+
+func (i *InstrUnreachable) Result() *Reg         { return nil }
+func (i *InstrUnreachable) Successors() []string { return nil }
+func (i *InstrUnreachable) String() string       { return "  unreachable" }
+
+// InstrPanic is the semantic panic terminator. Backends must preserve Value
+// and SiteID when they implement panic records; legacy emitters may lower it
+// to an unreachable trap until their runtime support is available.
+type InstrPanic struct {
+	Value  Value
+	Cause  Value
+	SiteID int
+}
+
+func (i *InstrPanic) Result() *Reg         { return nil }
+func (i *InstrPanic) Successors() []string { return nil }
+func (i *InstrPanic) String() string {
+	if i.Cause != nil {
+		return fmt.Sprintf("  panic %s cause %s (site %d)", i.Value, i.Cause, i.SiteID)
+	}
+	return fmt.Sprintf("  panic %s (site %d)", i.Value, i.SiteID)
+}
+
+// PanicSite is immutable source metadata attached to a dynamic panic value.
+// The value itself remains an HIR operand and is handled by the eventual
+// runtime panic record; this table only describes where the panic originated.
+type PanicSite struct {
+	ID       int
+	Function string
+	Location SourceLocation
+}
+
+// PanicRecord describes the runtime ABI shared by native and Wasm backends.
+// Value is represented indirectly by the backend-specific heap pointer; TypeID
+// lets recover restore the dynamic value without depending on a Go type.
+type PanicRecord struct {
+	Value  Value
+	TypeID int64
+	SiteID int
+}
+
+// DeferEntry describes one defer registration in source order.  The backend
+// uses the ordinal to build its cleanup/unwind chain; it must not depend on
+// an AST pointer or on a backend-specific label.
+type DeferEntry struct {
+	ID       int
+	Location SourceLocation
+}
+
+type ItabMethodEntry struct {
+	MethodName   string
+	TargetFnName string
+	MethodType   sema.Method
+}
+
+type ItabDef struct {
+	GlobalName     string
+	ConcreteType   sema.Type
+	InterfaceType  *sema.InterfaceType
+	TypeID         int64
+	ItabStructName string
+	Methods        []ItabMethodEntry
+}
+
+type Function struct {
+	Name       string
+	Location   SourceLocation
+	PanicSites []PanicSite
+	Defers     []DeferEntry
+	// HasLocalRecover is true only when this function directly defers a
+	// function literal containing recover.  A recover implemented by another
+	// function is deliberately unsupported: an uncaught panic is fatal at the
+	// point where it is raised.
+	HasLocalRecover bool
+	Params          []*Reg
+	ReturnTypes     []sema.Type
+	// ControlNodes is the zero-based function-local table for structured
+	// control elements. A branch target ID indexes this slice directly.
+	ControlNodes []ControlElement
+	// ControlRoot is the first control-table entry. ControlExit is registered
+	// immediately after it, but emitted as the final empty structured block.
+	// It is the safe fallback continuation for control elements whose more
+	// precise Next link has not been assigned yet.
+	ControlExit *BlockNode
+	ControlRoot *BlockNode
+	// StructuredBody is the authoritative function representation. Backends
+	// may derive a temporary CFG from it, but the HIR function does not own one.
+	StructuredBody ControlBody
+	IsVariadic     bool
+	IsExtern       bool
+
+	// -------------------------------------------------------------------------
+	// CFunc / C ABI 連携用フィールド
+	// -------------------------------------------------------------------------
+	IsCFunc       bool
+	IsPassThrough bool
+	CFuncTarget   string
+}
+
+// ControlNodeAt resolves a structured-control ID without a label scan.
+func (f *Function) ControlNodeAt(id int) (ControlElement, bool) {
+	if f == nil || id < 0 || id >= len(f.ControlNodes) {
+		return nil, false
+	}
+	return f.ControlNodes[id], true
+}
+
+// BranchDepth converts an absolute target depth into the relative depth used
+// by structured backends. The target is resolved by direct array indexing.
+func (f *Function) BranchDepth(branch ControlElement, targetID int) (int, bool) {
+	if branch == nil {
+		return 0, false
+	}
+	target, ok := f.ControlNodeAt(targetID)
+	if !ok || controlElementDepth(target) >= controlElementDepth(branch) {
+		return 0, false
+	}
+	return controlElementDepth(branch) - controlElementDepth(target) - 1, true
+}
+
+// controlElementDepth avoids relying on promoted interface methods while the
+// self-hosted compiler is still lowering embedded control links.
+func controlElementDepth(element ControlElement) int {
+	switch n := element.(type) {
+	case *BlockNode:
+		return n.ControlDepth
+	case *LoopNode:
+		return n.ControlDepth
+	case *IfNode:
+		return n.ControlDepth
+	case *BrNode:
+		return n.ControlDepth
+	case *BrIfNode:
+		return n.ControlDepth
+	case *BrTableNode:
+		return n.ControlDepth
+	case *TableNode:
+		return n.ControlDepth
+	default:
+		return 0
+	}
+}
+
+func (f *Function) String() string {
+	var sb strings.Builder
+	retTypeStr := "void"
+	if len(f.ReturnTypes) == 1 {
+		retTypeStr = f.ReturnTypes[0].TypeName()
+	} else if len(f.ReturnTypes) > 1 {
+		types := make([]string, len(f.ReturnTypes))
+		for idx, rt := range f.ReturnTypes {
+			types[idx] = rt.TypeName()
+		}
+		retTypeStr = fmt.Sprintf("(%s)", strings.Join(types, ", "))
+	}
+
+	params := make([]string, len(f.Params))
+	for idx, p := range f.Params {
+		params[idx] = fmt.Sprintf("%s %s", p.Typ.TypeName(), p)
+	}
+	if f.IsVariadic {
+		params = append(params, "...")
+	}
+
+	if f.IsExtern {
+		prefix := "extern func"
+		if f.IsCFunc {
+			prefix = "extern cfunc"
+		}
+		sb.WriteString(fmt.Sprintf("%s @%s(%s) %s\n", prefix, f.Name, strings.Join(params, ", "), retTypeStr))
+		return sb.String()
+	}
+
+	prefix := "func"
+	if f.IsCFunc {
+		prefix = "cfunc"
+	}
+	sb.WriteString(fmt.Sprintf("%s @%s(%s) %s {\n", prefix, f.Name, strings.Join(params, ", "), retTypeStr))
+	if len(f.StructuredBody) > 0 {
+		sb.WriteString(renderControlBody(f.StructuredBody))
+	}
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+type Program struct {
+	ModuleName           string
+	StringConstants      []*ConstString
+	Globals              []*GlobalVar
+	Itabs                []*ItabDef
+	Functions            []*Function
+	InstructionLocations map[string]SourceLocation
+}
+
+func (p *Program) Dump() string {
+	// Dump is a debugging aid only.  Keep it inert in Go-Hike builds: the
+	// source compiler sees both ast.Program and hir.Program and may resolve
+	// these fields against the wrong Program type.
+	return ""
+}

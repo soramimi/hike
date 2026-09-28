@@ -1,0 +1,212 @@
+package token
+
+type TokenType string
+
+type Token struct {
+	Type    TokenType
+	Literal string
+	Line    int
+	Col     int
+}
+
+const (
+	ILLEGAL = "ILLEGAL"
+	EOF     = "EOF"
+
+	// Literals
+	IDENT  = "IDENT"
+	INT    = "INT"
+	FLOAT  = "FLOAT"
+	CHAR   = "CHAR" // シングルクォート文字リテラル ('a', '\n', 'あ' 等)
+	STRING = "STRING"
+
+	// Operators
+	ASSIGN    = "="
+	PLUS      = "+"
+	MINUS     = "-"
+	PERCENT   = "%"
+	BANG      = "!"
+	ASTERISK  = "*"
+	SLASH     = "/"
+	LT        = "<"
+	GT        = ">"
+	EQ        = "=="
+	NEQ       = "!="
+	LE        = "<="
+	GE        = ">="
+	LAND      = "&&"
+	LOR       = "||"
+	AMPERSAND = "&"
+
+	OR    = "|"
+	CARET = "^"
+	SHL   = "<<"
+	SHR   = ">>"
+
+	ARROW = "<-" // 受信・チャネル演算子
+
+	INC             = "++"
+	DEC             = "--"
+	PLUS_ASSIGN     = "+="
+	MINUS_ASSIGN    = "-="
+	ASTERISK_ASSIGN = "*="
+	SLASH_ASSIGN    = "/="
+	AND_ASSIGN      = "&="
+	OR_ASSIGN       = "|="
+	XOR_ASSIGN      = "^="
+	SHL_ASSIGN      = "<<="
+	SHR_ASSIGN      = ">>="
+
+	COMMA     = ","
+	SEMICOLON = ";"
+	COLON     = ":"
+	DOT       = "."
+	ELLIPSIS  = "..."
+	DEFINE    = ":="
+
+	LPAREN   = "("
+	RPAREN   = ")"
+	LBRACE   = "{"
+	RBRACE   = "}"
+	LBRACKET = "["
+	RBRACKET = "]"
+
+	// Keywords
+	PACKAGE     = "PACKAGE"
+	IMPORT      = "IMPORT"
+	FUNC        = "FUNC"
+	CFUNC       = "CFUNC"
+	EXTERN      = "EXTERN" // 外部C言語等の関数宣言用 (extern func)
+	JFUNC       = "JFUNC"  // WASM向けインラインJavaScript関数用 (jfunc)
+	INLINEASM   = "INLINEASM"
+	PASSTHROUGH = "PASSTHROUGH"
+	MAP         = "MAP"
+	CHAN        = "CHAN"
+	ASYNC       = "ASYNC"
+	RETURN      = "RETURN"
+	TYPE        = "TYPE"
+	STRUCT      = "STRUCT"
+	INTERFACE   = "INTERFACE"
+	CONST       = "CONST"
+	IOTA        = "IOTA"
+	RANGE       = "RANGE"
+	BREAK       = "BREAK"
+	CONTINUE    = "CONTINUE"
+	IF          = "IF"
+	ELSE        = "ELSE"
+	FOR         = "FOR"
+	SWITCH      = "SWITCH"
+	CASE        = "CASE"
+	DEFAULT     = "DEFAULT"
+	DEFER       = "DEFER"
+	LOCK        = "LOCK"
+	AREA        = "AREA"
+	THREADABLE  = "THREADABLE"
+	CONCURRENT  = "CONCURRENT"
+	NIL         = "NIL"
+	VAR         = "VAR"
+
+	// Internal Synthetic Tokens (AST変換・意味決定フェーズ用)
+	IMPLICIT_CAST = "IMPLICIT_CAST"
+)
+
+// GoHikeConstantNames lists the token constants exposed by the Go-compatible
+// package model. Keeping this catalogue with the token definitions prevents
+// semantic analysis from duplicating the lexical vocabulary.
+var GoHikeConstantNames = []string{
+	"ILLEGAL", "EOF", "IDENT", "INT", "FLOAT", "CHAR", "STRING",
+	"ASSIGN", "PLUS", "MINUS", "PERCENT", "BANG", "ASTERISK", "SLASH",
+	"LT", "GT", "EQ", "NEQ", "LE", "GE", "LAND", "LOR", "AMPERSAND",
+	"OR", "CARET", "SHL", "SHR", "COMMA", "SEMICOLON", "COLON", "ELLIPSIS",
+	"DEFINE", "LPAREN", "RPAREN", "LBRACE", "RBRACE", "LBRACKET", "RBRACKET",
+	"PACKAGE", "IMPORT", "FUNC", "CFUNC", "EXTERN", "JFUNC", "INLINEASM",
+	"PASSTHROUGH", "MAP", "CHAN", "ASYNC", "RETURN", "TYPE", "STRUCT",
+	"INTERFACE", "CONST", "IOTA", "RANGE", "BREAK", "CONTINUE", "IF", "ELSE",
+	"FOR", "SWITCH", "CASE", "DEFAULT", "DEFER", "LOCK", "AREA", "THREADABLE", "CONCURRENT", "NIL", "VAR", "IMPLICIT_CAST",
+}
+
+var keywords = map[string]TokenType{
+	"package":     PACKAGE,
+	"import":      IMPORT,
+	"func":        FUNC,
+	"cfunc":       CFUNC,
+	"extern":      EXTERN,
+	"jfunc":       JFUNC,
+	"passthrough": PASSTHROUGH,
+	"var":         VAR,
+	"const":       CONST,
+	"type":        TYPE,
+	"struct":      STRUCT,
+	"interface":   INTERFACE,
+	"map":         MAP,
+	"chan":        CHAN,
+	"Async":       ASYNC,
+	"async":       ASYNC,
+	"if":          IF,
+	"else":        ELSE,
+	"for":         FOR,
+	"range":       RANGE,
+	"switch":      SWITCH,
+	"case":        CASE,
+	"default":     DEFAULT,
+	"return":      RETURN,
+	"defer":       DEFER,
+	"lock":        LOCK,
+	"area":        AREA,
+	"threadable":  THREADABLE,
+	"concurrent":  CONCURRENT,
+	"break":       BREAK,
+	"continue":    CONTINUE,
+	"nil":         NIL,
+}
+
+func LookupIdent(ident string) TokenType {
+	// Do not use the keyword map here: the self-hosted runtime must be able to
+	// classify strings that point into a lexer buffer without copying a map key.
+	switch ident {
+	case "package": return PACKAGE
+	case "import": return IMPORT
+	case "func": return FUNC
+	case "cfunc": return CFUNC
+	case "extern": return EXTERN
+	case "jfunc": return JFUNC
+	case "passthrough": return PASSTHROUGH
+	case "var": return VAR
+	case "const": return CONST
+	case "type": return TYPE
+	case "struct": return STRUCT
+	case "interface": return INTERFACE
+	case "map": return MAP
+	case "chan": return CHAN
+	case "Async", "async": return ASYNC
+	case "return": return RETURN
+	case "if": return IF
+	case "else": return ELSE
+	case "for": return FOR
+	case "range": return RANGE
+	case "switch": return SWITCH
+	case "case": return CASE
+	case "default": return DEFAULT
+	case "defer": return DEFER
+	case "lock": return LOCK
+	case "area": return AREA
+	case "threadable": return THREADABLE
+	case "concurrent": return CONCURRENT
+	case "break": return BREAK
+	case "continue": return CONTINUE
+	case "nil": return NIL
+	}
+	return IDENT
+}
+
+func keywordBytesEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
