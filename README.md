@@ -20,8 +20,6 @@ Hikeは、Go風の構文を持ちながらGCを持たない軽量なシステム
 - 型推論(`:=`)、多値返却、スライス、構造体、ジェネリクスなどGo譲りの機能を持つ
 - `-g`フラグでDWARFデバッグ情報を生成でき、GDB/LLDB(ネイティブ)やChrome DevTools(`-target wabt`のWasmビルド)でソースレベルデバッグができる
 
-詳しくは [hike-lang/README.md](hike-lang/README.md) を参照してください。
-
 ## はじめ方
 
 `hikec`のビルドから簡単なHello World実行までは [QuickStart.md](QuickStart.md) にまとめています。
