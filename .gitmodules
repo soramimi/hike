@@ -4,3 +4,4 @@
 [submodule "hike-lang"]
 	path = hike-lang
 	url = git@github.com:soramimi/hike-lang.git
+
