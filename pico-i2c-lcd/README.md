@@ -31,3 +31,5 @@ L チカからコピーしたビルドディレクトリが残っている場合
 - [main.hike](main.hike) がメッセージと表示順を定義します。
 - [i2c-lcd.hike](i2c-lcd.hike) が 4 ビットモードへの初期化、データ送信、カーソル位置、消去、中央寄せを処理します。LCD 制御の参考にした C コードは [_example_main.c](_example_main.c) にあります。
 - [lib/hike_shim.c](lib/hike_shim.c) が Pico SDK の I²C と待ち時間 API を Hike から呼べるようにします。[lib/hike_crt_main.c](lib/hike_crt_main.c) が Hike の `setup()` と `loop()` を呼び出します。
+
+表示できるのは ASCII 文字だけです。`len` はバイト数を数え、LCD の文字 ROM は UTF-8 に対応していないため、日本語などを渡すと別の文字が表示されます。1 行に収まらない 16 バイト超の文字列は、先頭 16 バイトだけを表示します。

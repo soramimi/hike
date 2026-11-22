@@ -6,10 +6,12 @@ read [README.md](README.md) and [QuickStart.md](QuickStart.md) instead.
 ## Workspace layout
 
 ```
-hike-lang/    Clone of https://github.com/kanryu/hike-lang (the compiler, `hikec`)
-pico-sdk/     Raspberry Pi Pico SDK (v2.0.0), used only by pico-blink/
-pico-blink/   Example: an LED-blink firmware for RP2040, partly written in Hike
-QuickStart.md Build hikec + run Hello World
+hike-lang/     git submodule: fork of https://github.com/kanryu/hike-lang
+               (the compiler, `hikec`), `pico` branch
+pico-sdk/      git submodule: Raspberry Pi Pico SDK (2.3.1)
+pico-blink/    Example: LED-blink firmware for RP2040, logic written in Hike
+pico-i2c-lcd/  Example: HD44780 16x2 LCD over a PCF8574 I2C backpack, in Hike
+QuickStart.md  Build hikec + run Hello World
 ```
 
 ## Building hikec
@@ -65,12 +67,26 @@ runtime helpers (pthread/malloc/nanosleep declarations that are always
 embedded but never actually implemented for this target) get dropped instead
 of causing undefined-reference errors.
 
-Known limitation: `GetRuntimeIR` doesn't recognize ARM/thumb triples, so it
-falls back to the 64-bit-pointer Linux runtime IR. This is harmless as long
-as the Hike code sticks to primitives (`uint32`, `int`, `bool`, plain
-functions/loops) and avoids slices, strings, closures, or concurrency
-features — those would pull in runtime helpers built around 64-bit pointer
-layouts, which are wrong for a 32-bit target's ABI.
+Runtime IR selection: `GetRuntimeIR` picks `runtime_common32.ll` when the
+target's `PointerBits` is 32 (true for `cortex-m0`), so strings use the
+32-bit layout `{ i8*, i32, i32 }` and the `*32` helpers. The OS part still
+comes from the Linux template (pthread/nanosleep/write declarations); these
+are dropped by `--gc-sections` as long as nothing calls them.
+
+Strings on `cortex-m0` (checked against emitted IR and the linked ELF):
+
+- `len(s)`, `s[i]`, `s[a:b]`, `==`, and string literals are self-contained
+  (inline code plus `memcmp32`/`memcpy32` from the runtime). They link
+  nothing external. `pico-i2c-lcd/` relies on these.
+- `a + b` calls `hike_strcat_len32` → `malloc`. pico-sdk's newlib supplies
+  `malloc`, so it *links*, but there is no GC: every concatenation leaks
+  heap. Never concatenate inside `loop()`.
+- Indexing and slicing are not bounds-checked; out-of-range reads silently
+  read adjacent memory.
+- `len` counts bytes, not characters. The HD44780 character ROM is not
+  UTF-8, so only ASCII renders correctly on the LCD.
+
+Closures, maps, and concurrency features are untested on this target.
 
 ## pico-blink build
 
@@ -82,19 +98,28 @@ make flash    # copies build/blink.uf2 to a mounted RPI-RP2 drive
 ```
 
 `CMAKE_POLICY_VERSION_MINIMUM=3.5` is exported by the Makefile itself —
-needed because pico-sdk 2.0.0 vendors an old mbedtls whose
+needed because pico-sdk vendors an old mbedtls whose
 `cmake_minimum_required()` predates policies removed by newer CMake, and
 because `picotool` gets fetched/built from source on first run.
 
-File layout: `main.hike` and `Makefile` stay at `pico-blink/` top level;
+File layout: `*.hike` and `Makefile` stay at the example's top level;
 everything CMake/pico-sdk-specific (`CMakeLists.txt`, `hike_crt_main.c`,
-`hike_shim.c`, `pico_sdk_import.cmake`) lives under `pico-blink/lib/`.
+`hike_shim.c`, `pico_sdk_import.cmake`) lives under `lib/`.
+
+`pico-i2c-lcd/` uses the same layout and Make targets; its output is
+`build/pico_lcd_1602_i2c.uf2`, and its `lib/CMakeLists.txt` passes both
+`main.hike` and `i2c-lcd.hike` to one `hikec emit-ir` call.
+
+The `clang` step prints `warning: overriding the module target triple with
+thumbv6m-unknown-none-eabi [-Woverride-module]`. It's harmless: hikec writes
+`thumbv6m-none-eabi`, and clang normalizes it to the 4-part form.
 
 ## General notes
 
-- This is not a git repository (`hike-lang/` and `pico-sdk/` are plain
-  directory copies, not submodules), so there's no git history here to
-  check with `git log`/`git blame`.
+- `hike-lang/` and `pico-sdk/` are git submodules. Changes to the compiler
+  (for example `pkg/target/target.go`) must be committed inside
+  `hike-lang/` first, then the submodule pointer is committed here.
+- `hike-lang/hikec` is a build artifact and is not committed.
 - Prefer testing actual builds (`go build`, `hikec run`, `make`) over
   reasoning from memory about whether something works — this workspace has
   already hit a couple of non-obvious runtime/linker gotchas (see above).

@@ -1,14 +1,15 @@
 # hike workspace
 
-[Hike言語](https://github.com/kanryu/hike-lang) を試すための作業用ワークスペースです。コンパイラ本体のクローンに加え、Raspberry Pi Pico (RP2040) 向けにHikeでLチカを動かす実験 ([pico-blink/](pico-blink/)) を含んでいます。
+[Hike言語](https://github.com/kanryu/hike-lang) を試すための作業用ワークスペースです。コンパイラ本体のクローンに加え、Raspberry Pi Pico (RP2040) 向けにHikeで書いたファームウェアのサンプル(Lチカ [pico-blink/](pico-blink/)、I²C LCD表示 [pico-i2c-lcd/](pico-i2c-lcd/))を含んでいます。
 
 ## 構成
 
 ```
-hike-lang/    Hike言語コンパイラ (hikec) のクローン
-pico-sdk/     Raspberry Pi Pico SDK (pico-blink のビルドに使用)
-pico-blink/   RP2040向けLチカサンプル(一部をHikeで記述)
-QuickStart.md hikecのビルド〜Hello World実行までの手順
+hike-lang/     Hike言語コンパイラ (hikec)(サブモジュール。cortex-m0 ターゲットを追加したフォーク)
+pico-sdk/      Raspberry Pi Pico SDK(サブモジュール。Picoサンプルのビルドに使用)
+pico-blink/    RP2040向けLチカサンプル(ロジックをHikeで記述)
+pico-i2c-lcd/  RP2040向けI²C LCD(16x2)表示サンプル(LCD制御をHikeで記述)
+QuickStart.md  hikecのビルド〜Hello World実行までの手順
 ```
 
 ## Hike言語とは
@@ -24,4 +25,4 @@ Hikeは、Go風の構文を持ちながらGCを持たない軽量なシステム
 
 `hikec`のビルドから簡単なHello World実行までは [QuickStart.md](QuickStart.md) にまとめています。
 
-RP2040(Raspberry Pi Pico)向けにHikeコードをビルドして実機で動かす例は [pico-blink/README.md](pico-blink/README.md) を参照してください。
+RP2040(Raspberry Pi Pico)向けにHikeコードをビルドして実機で動かす例は [pico-blink/README.md](pico-blink/README.md) と [pico-i2c-lcd/README.md](pico-i2c-lcd/README.md) を参照してください。
