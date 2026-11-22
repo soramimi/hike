@@ -1,4 +1,4 @@
-// C-ABI shims called from blink.hike. Kept uint32-only on the Hike side to
+// C-ABI shims called from main.hike. Kept uint32-only on the Hike side to
 // avoid depending on how Hike lowers `bool` for extern calls.
 #include "pico/stdlib.h"
 

@@ -9,13 +9,13 @@ set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
-# Toolchain used to compile blink.hike. hikec turns .hike into LLVM IR;
+# Toolchain used to compile main.hike. hikec turns .hike into LLVM IR;
 # clang (not the project's arm-none-eabi-gcc) turns that IR into a Thumb
-# object file, which is then linked normally alongside main.c/hike_shim.c.
+# object file, which is then linked normally alongside hike_crt_main.c/hike_shim.c.
 find_program(CLANG_EXECUTABLE clang REQUIRED)
 set(HIKEC "${CMAKE_CURRENT_SOURCE_DIR}/../../hike-lang/hikec" CACHE FILEPATH "Path to the hikec compiler binary")
 
-set(HIKE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../blink.hike)
+set(HIKE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../main.hike)
 set(HIKE_LL ${CMAKE_CURRENT_BINARY_DIR}/blink.ll)
 set(HIKE_OBJ ${CMAKE_CURRENT_BINARY_DIR}/blink.o)
 
@@ -23,7 +23,7 @@ add_custom_command(
     OUTPUT ${HIKE_LL}
     COMMAND ${HIKEC} emit-ir -target cortex-m0 ${HIKE_SRC} -o ${HIKE_LL}
     DEPENDS ${HIKE_SRC} ${HIKEC}
-    COMMENT "hikec: blink.hike -> blink.ll (thumbv6m-none-eabi)"
+    COMMENT "hikec: main.hike -> blink.ll (thumbv6m-none-eabi)"
     VERBATIM
 )
 
@@ -40,7 +40,7 @@ add_custom_command(
 add_custom_target(hike_blink_obj DEPENDS ${HIKE_OBJ})
 
 add_executable(blink
-    main.c
+    hike_crt_main.c
     hike_shim.c
 )
 add_dependencies(blink hike_blink_obj)

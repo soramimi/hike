@@ -39,7 +39,7 @@ memcpy, memcmp, strlen, strcmp (and their *32 variants)
 ```
 
 See `pkg/backend/llvm/runtime.go`'s `RuntimeLLVMSymbols` map for the full
-list. This bit us once in `pico-blink/blink.hike`: a function named
+list. This bit us once in `pico-blink/main.hike`: a function named
 `hike_sleep_ms` silently got linked to the runtime's own pthread/`nanosleep`
 based implementation instead of the custom pico-sdk shim, causing an
 `undefined reference to nanosleep` link error on a bare-metal target. Fix:
@@ -86,8 +86,8 @@ needed because pico-sdk 2.0.0 vendors an old mbedtls whose
 `cmake_minimum_required()` predates policies removed by newer CMake, and
 because `picotool` gets fetched/built from source on first run.
 
-File layout: `blink.hike` and `Makefile` stay at `pico-blink/` top level;
-everything CMake/pico-sdk-specific (`CMakeLists.txt`, `main.c`,
+File layout: `main.hike` and `Makefile` stay at `pico-blink/` top level;
+everything CMake/pico-sdk-specific (`CMakeLists.txt`, `hike_crt_main.c`,
 `hike_shim.c`, `pico_sdk_import.cmake`) lives under `pico-blink/lib/`.
 
 ## General notes

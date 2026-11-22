@@ -1,0 +1,76 @@
+// Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+// SPDX-License-Identifier: BSD-3-Clause
+
+package main
+
+func pico_i2c_write_byte(address uint32, value uint32)
+func pico_delay_us(us uint32)
+func pico_delay_ms(ms uint32)
+
+const LcdAddress uint32 = 0x27
+const LcdColumns int = 16
+
+const LcdCommand uint32 = 0
+const LcdCharacter uint32 = 0x01
+const LcdEnable uint32 = 0x04
+const LcdBacklight uint32 = 0x08
+const LcdPulseDelayUs uint32 = 600
+
+const LcdClearDisplay uint32 = 0x01
+const LcdEntryModeSet uint32 = 0x04
+const LcdEntryLeft uint32 = 0x02
+const LcdDisplayControl uint32 = 0x08
+const LcdDisplayOn uint32 = 0x04
+const LcdFunctionSet uint32 = 0x20
+const LcdTwoLines uint32 = 0x08
+const LcdSetDdram uint32 = 0x80
+const LcdSecondRowOffset uint32 = 0x40
+
+func lcdWriteNibble(nibble uint32, mode uint32) {
+    value := (nibble << 4) | mode | LcdBacklight
+    pico_i2c_write_byte(LcdAddress, value)
+    pico_delay_us(LcdPulseDelayUs)
+    pico_i2c_write_byte(LcdAddress, value | LcdEnable)
+    pico_delay_us(LcdPulseDelayUs)
+    pico_i2c_write_byte(LcdAddress, value)
+    pico_delay_us(LcdPulseDelayUs)
+}
+
+func lcdWriteByte(value uint32, mode uint32) {
+    lcdWriteNibble(value >> 4, mode)
+    lcdWriteNibble(value & 0x0f, mode)
+}
+
+func lcdClear() {
+    lcdWriteByte(LcdClearDisplay, LcdCommand)
+    pico_delay_ms(2)
+}
+
+func lcdInit() {
+    pico_delay_ms(50)
+    // HD44780U Figure 24 starts with single-nibble transfers.
+    lcdWriteNibble(0x03, LcdCommand)
+    pico_delay_ms(5)
+    lcdWriteNibble(0x03, LcdCommand)
+    lcdWriteNibble(0x03, LcdCommand)
+    lcdWriteNibble(0x02, LcdCommand)
+
+    lcdWriteByte(LcdFunctionSet | LcdTwoLines, LcdCommand)
+    lcdWriteByte(LcdDisplayControl, LcdCommand)
+    lcdClear()
+    lcdWriteByte(LcdEntryModeSet | LcdEntryLeft, LcdCommand)
+    lcdWriteByte(LcdDisplayControl | LcdDisplayOn, LcdCommand)
+}
+
+func lcdWriteCentered(row uint32, text string) {
+    length := len(text)
+    if length > LcdColumns {
+        length = LcdColumns
+    }
+    column := LcdColumns / 2 - length / 2
+    address := LcdSetDdram + row * LcdSecondRowOffset + uint32(column)
+    lcdWriteByte(address, LcdCommand)
+    for i := 0; i < length; i = i + 1 {
+        lcdWriteByte(uint32(text[i]), LcdCharacter)
+    }
+}

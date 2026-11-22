@@ -1,6 +1,6 @@
 #include "pico/stdlib.h"
 
-// Defined in blink.hike, compiled separately by hikec + clang into blink.o.
+// Defined in main.hike and linked from the Hike object.
 extern void setup(void);
 extern void loop(void);
 

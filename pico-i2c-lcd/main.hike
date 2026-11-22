@@ -1,0 +1,26 @@
+// Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+// SPDX-License-Identifier: BSD-3-Clause
+
+package main
+
+func pico_i2c_init()
+
+func setup() {
+    pico_i2c_init()
+    lcdInit()
+}
+
+func loop() {
+    showPage("Raspberry Pi", "Pico")
+    showPage("Powered by", "hike-lang")
+    showPage("Hello, world!", "Nice to meet you")
+    showPage("I2C LCD", "16 cols, 2 rows")
+    showPage("Thanks for", "watching!")
+}
+
+func showPage(top string, bottom string) {
+    lcdWriteCentered(0, top)
+    lcdWriteCentered(1, bottom)
+    pico_delay_ms(2000)
+    lcdClear()
+}

@@ -13,14 +13,14 @@ func pico_delay_ms(ms uint32)
 const LedPin uint32 = 25
 const DelayMs uint32 = 250
 
-// Called once at startup (from main.c). Arduino-style, though the repeated
-// call to loop() happens in main.c, not inside Hike.
+// Called once at startup (from hike_crt_main.c). Arduino-style, though the repeated
+// call to loop() happens in hike_crt_main.c, not inside Hike.
 func setup() {
     pico_gpio_init(LedPin)
     pico_gpio_set_dir_out(LedPin)
 }
 
-// Called repeatedly by main.c's `while (true) { loop(); }`.
+// Called repeatedly by hike_crt_main.c's `while (true) { loop(); }`.
 func loop() {
     pico_gpio_put(LedPin, 1)
     pico_delay_ms(DelayMs)
